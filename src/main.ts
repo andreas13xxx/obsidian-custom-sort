@@ -444,6 +444,19 @@ export default class CustomSortPlugin
 				});
 			};
 
+		const getSyncBookmarksRecursiveMenuItemForFile = (file: TAbstractFile): ContextMenuProvider =>
+			(item: MenuItem) => {
+				item.setTitle(m ? 'Sync bookmarks for custom sorting (recursive)' : 'Sync bookmarks for sorting (recursive)');
+				item.onClick(() => {
+					const bookmarksPlugin = getBookmarksPlugin(plugin.app, plugin.settings.bookmarksGroupToConsumeAsOrderingReference)
+					if (bookmarksPlugin) {
+						const targetFolder: TFolder = (file instanceof TFolder) ? file : file.parent!
+						plugin.syncBookmarksRecursive(targetFolder, bookmarksPlugin)
+						bookmarksPlugin.saveDataAndUpdateBookmarkViews(true)
+					}
+				});
+			};
+
 		const getBookmarkSelectedMenuItemForFiles = (files: TAbstractFile[]): ContextMenuProvider =>
 			(item: MenuItem) => {
 				item.setTitle(m ? 'Bookmark selected for custom sorting' : 'Custom sort: bookmark selected for sorting');
@@ -500,6 +513,7 @@ export default class CustomSortPlugin
 							}
 							(submenu ?? menu).addItem(getBookmarkAllMenuItemForFile(file));
 							(submenu ?? menu).addItem(getUnbookmarkAllMenuItemForFile(file));
+							(submenu ?? menu).addItem(getSyncBookmarksRecursiveMenuItemForFile(file));
 						}
 					}
 
@@ -680,6 +694,19 @@ export default class CustomSortPlugin
 			this.createProcessingContextForSorting(has),
 			uiSortOrder
 		)
+	}
+
+	syncBookmarksRecursive(folder: TFolder, bookmarksPlugin: BookmarksPluginInterface): void {
+		// Sync the current folder: bookmark all children that are not yet bookmarked (appended at end)
+		const orderedChildren: Array<TAbstractFile> = this.orderedFolderItemsForBookmarking(folder, bookmarksPlugin)
+		bookmarksPlugin.bookmarkSiblings(orderedChildren)
+
+		// Recurse into subfolders
+		for (const child of folder.children) {
+			if (child instanceof TFolder) {
+				this.syncBookmarksRecursive(child, bookmarksPlugin)
+			}
+		}
 	}
 
 	onunload() {
