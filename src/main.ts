@@ -103,6 +103,8 @@ export default class CustomSortPlugin
 
 	uninstallerOfFileExplorerPatch: MonkeyAroundUninstaller|undefined = undefined
 
+	bookmarksSyncTimerId: ReturnType<typeof setInterval> | undefined = undefined
+
 	showNotice(message: string, timeout?: number) {
 		if (this.settings.notificationsEnabled || (Platform.isMobile && this.settings.mobileNotificationsEnabled)) {
 			new Notice(message, timeout)
@@ -374,6 +376,8 @@ export default class CustomSortPlugin
 		this.registerPluginUnloadHandler()
 
 		this.initialize();
+
+		this.restartBookmarksSyncTimer();
 	}
 
 	registerEventHandlers() {
@@ -582,6 +586,16 @@ export default class CustomSortPlugin
 				bookmarksPlugin.saveDataAndUpdateBookmarkViews(true)
 			}
 		})
+
+		this.app.vault.on("create", (file: TAbstractFile) => {
+			if (plugin.settings.bookmarksSyncIntervalSeconds <= 0) return
+			const bookmarksPlugin = getBookmarksPlugin(plugin.app, plugin.settings.bookmarksGroupToConsumeAsOrderingReference)
+			if (bookmarksPlugin && file.parent) {
+				const orderedChildren: Array<TAbstractFile> = plugin.orderedFolderItemsForBookmarking(file.parent, bookmarksPlugin)
+				bookmarksPlugin.syncSiblings(orderedChildren)
+				bookmarksPlugin.saveDataAndUpdateBookmarkViews(true)
+			}
+		})
 	}
 
 	uninstallFileExplorerPatchIfInstalled() {
@@ -697,9 +711,9 @@ export default class CustomSortPlugin
 	}
 
 	syncBookmarksRecursive(folder: TFolder, bookmarksPlugin: BookmarksPluginInterface): void {
-		// Sync the current folder: bookmark all children that are not yet bookmarked (appended at end)
+		// Sync the current folder: reorder bookmarks to match file explorer order and remove orphans
 		const orderedChildren: Array<TAbstractFile> = this.orderedFolderItemsForBookmarking(folder, bookmarksPlugin)
-		bookmarksPlugin.bookmarkSiblings(orderedChildren)
+		bookmarksPlugin.syncSiblings(orderedChildren)
 
 		// Recurse into subfolders
 		for (const child of folder.children) {
@@ -709,7 +723,36 @@ export default class CustomSortPlugin
 		}
 	}
 
+	runBookmarksSyncForVault(): void {
+		if (this.settings.suspended) return
+		const bookmarksPlugin = getBookmarksPlugin(this.app, this.settings.bookmarksGroupToConsumeAsOrderingReference)
+		if (!bookmarksPlugin) return
+		const rootFolder: TFolder = this.app.vault.getRoot()
+		this.syncBookmarksRecursive(rootFolder, bookmarksPlugin)
+		bookmarksPlugin.saveDataAndUpdateBookmarkViews(true)
+	}
+
+	restartBookmarksSyncTimer(): void {
+		// Clear existing timer
+		if (this.bookmarksSyncTimerId !== undefined) {
+			clearInterval(this.bookmarksSyncTimerId)
+			this.bookmarksSyncTimerId = undefined
+		}
+
+		// Start new timer if interval > 0
+		const intervalSeconds = this.settings.bookmarksSyncIntervalSeconds
+		if (intervalSeconds > 0) {
+			this.bookmarksSyncTimerId = setInterval(() => {
+				this.runBookmarksSyncForVault()
+			}, intervalSeconds * 1000)
+		}
+	}
+
 	onunload() {
+		if (this.bookmarksSyncTimerId !== undefined) {
+			clearInterval(this.bookmarksSyncTimerId)
+			this.bookmarksSyncTimerId = undefined
+		}
 	}
 
 	onUserEnable() {
