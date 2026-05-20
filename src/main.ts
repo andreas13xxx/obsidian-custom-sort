@@ -254,6 +254,7 @@ export default class CustomSortPlugin
 						if (sortingData.sortSpec) {
 							if (!plugin.customSortAppliedAtLeastOnce) {
 								plugin.customSortAppliedAtLeastOnce = true
+								plugin.restartBookmarksSyncTimer()
 								setTimeout(() => {
 									plugin.setRibbonIconToEnabled.apply(plugin)
 									plugin.showNotice('Custom sort APPLIED.');
@@ -376,8 +377,6 @@ export default class CustomSortPlugin
 		this.registerPluginUnloadHandler()
 
 		this.initialize();
-
-		this.restartBookmarksSyncTimer();
 	}
 
 	registerEventHandlers() {
@@ -589,6 +588,7 @@ export default class CustomSortPlugin
 
 		this.app.vault.on("create", (file: TAbstractFile) => {
 			if (plugin.settings.bookmarksSyncIntervalSeconds <= 0) return
+			if (!plugin.customSortAppliedAtLeastOnce) return
 			const bookmarksPlugin = getBookmarksPlugin(plugin.app, plugin.settings.bookmarksGroupToConsumeAsOrderingReference)
 			if (bookmarksPlugin && file.parent) {
 				const orderedChildren: Array<TAbstractFile> = plugin.orderedFolderItemsForBookmarking(file.parent, bookmarksPlugin)
@@ -725,6 +725,7 @@ export default class CustomSortPlugin
 
 	runBookmarksSyncForVault(): void {
 		if (this.settings.suspended) return
+		if (!this.customSortAppliedAtLeastOnce) return
 		const bookmarksPlugin = getBookmarksPlugin(this.app, this.settings.bookmarksGroupToConsumeAsOrderingReference)
 		if (!bookmarksPlugin) return
 		const rootFolder: TFolder = this.app.vault.getRoot()
